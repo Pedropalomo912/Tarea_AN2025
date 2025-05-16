@@ -1,0 +1,391 @@
+---
+title: "Tarea3_Resuelta"
+author: "Pedro Gutiérrez"
+date: "2025-05-16"
+output: html_document
+---
+<style>
+body {
+text-align: justify}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(tidyverse)
+library(pracma)
+library(plotly)
+library(MASS)
+#library(ISLR2)
+library(car)
+library(corrplot)
+library(rgl)
+library(scatterPlotMatrix)
+
+
+library(openxlsx)
+library(readxl)
+library(writexl)
+library(quantmod)
+library(xts)
+library(zoo)
+library(dygraphs)
+knitr::knit_hooks$set(webgl = hook_webgl)
+```
+
+El objetivo de este archivo es obtener datos para llevar a cabo la Tarea 3 del curso Análisis Numérico. 
+
+# Indicadores económicos INEGI
+
+Inicialmente es necesario descargar el archivo de las series originales mensuales de los indicadores económicos que proporciona el [INEGI](https://www.inegi.org.mx/app/tablero/). Es necesario hacer una exploración preliminar del archivo para identificar las filas requeridas (en este caso fue desde la fila 2 hasta la 386).
+
+
+```{r}
+data <- read_xls("Análisis númerico/Complementos/BIE_BIE20250515201030.xls")
+View(data[2:386, ])
+```
+
+Dado que los nombres de las columnas (indicadores) es muy extenso, será conveniente brindar nuevos nombres (sin espacios, ni caracteres especiales, a excepción de los guiones bajos) que sean representativos. 
+
+
+```{r}
+names(data) <- c("Periodo", "IGAE", "Actividades_Primarias", "Actividad_Industrial", "IVF_Construccion",
+  "Actividades_Terciarias", "Ingresos_Retail", "Inversion_Fija_Bruta",
+  "IP_Consumidor", "IP_Consumidor_Subyacente", "IP_Productor",
+  "Tasa_Desocupacion_Urbana", "Tendencia_Empleo_Manufacturas",
+  "Asegurados_IMSS", "Expectativa_Personal_Ocupado",
+  "Importaciones_Totales", "Importaciones_No_Petroleras",
+  "Exportaciones_Totales", "Exportaciones_Petroleras",
+  "Exportaciones_No_Petroleras", "Precio_Promedio_Petroleo",
+  "TIIE", "Cetes_28_Dias", "Tasa_Fondeo_Gubernamental",
+  "Tipo_Cambio_Nominal", "Tipo_Cambio_Real_Multilateral",
+  "IPC_BMV", "Reservas_Internacionales",
+  "Confianza_Empresarial", "Indicador_Tendencia_Agregado",
+  "Pedidos_Manufactureros", "Confianza_Consumidor",
+  "Expectativa_Uso_Planta_Equipo", "Expectativa_Inventarios_Insumos",
+  "IPI_EUA", "Produccion_Manufacturera_EUA",
+  "Comercio_Retail_EUA", "Tasa_Desempleo_EUA",
+  "Empleo_EUA", "Tasa_Bonos_Tesoro_EUA",
+  "SP500", "Dow_Jones", "Confianza_Consumidor_EUA"
+)
+
+```
+
+Para que el periodo tenga formato de fecha es necesario utilizar la función `ym` (year-month) del package `lubridate`.
+
+```{r}
+data$Periodo <- ym(data$Periodo)
+write.xlsx(data, "./inegi_data.xlsx")
+glimpse(data)
+```
+
+En total son 42 indicadores, se sugiere trabajar con un subconjunto de estos. En particular es útil escoger aquellos que pertenezcan a la misma clasificación:
+
+```{r}
+Ingresos <- names(data)[2:6]
+Ingresos
+Inversion <- names(data)[7:8]
+Inversion
+Precios <- names(data)[9:11]
+Precios
+Exportaciones <- names(data)[12:15]
+Exportaciones
+Confianza_empresarial <- names(data)[16:21]
+Confianza_empresarial
+Empleo_EUA <- names(data)[22:28]
+Empleo_EUA
+SP500 <- names(data)[29:34]
+SP500
+Confianza_Consumidor_EUA <- names(data)[35:43]
+Confianza_Consumidor_EUA
+```
+Por ejemplo, a continuación seleccionamos los indicadores de Ingresos, Confianza_empresariaL, Empleo_EUA y SP500
+
+
+```{r}
+inegi_subconjunto <- data |> dplyr::select(Periodo, all_of(c(Ingresos, Confianza_empresarial, Empleo_EUA, SP500)))
+glimpse(inegi_subconjunto)
+```
+
+Contamos valores ausentes (NA).
+
+```{r}
+colSums(is.na(inegi_subconjunto))
+```
+
+```{r}
+library(openxlsx)
+
+write.xlsx(inegi_subconjunto, "Análisis númerico/Complementos/inegi_subdata.xlsx")
+```
+
+
+
+
+#Correlacion
+```{r}
+library(dplyr)
+
+names(data) <- ifelse(
+  is.na(names(data)), 
+  paste0("col_", seq_along(names(data))), 
+  names(data)
+)
+
+```
+
+
+```{r, echo=FALSE}
+data_numeric <- data %>% select_if(is.numeric)
+
+corr_matrix <- cor(data_numeric, use= "complete.obs")
+
+print("Análisis de Correlación:")
+print(corr_matrix)
+
+library(dplyr)
+
+data_numeric <- data %>%
+  select(where(~is.numeric(.) && sum(complete.cases(.)) >= 2))
+
+if(ncol(data_numeric) >= 2) {
+  corr_matrix <- cor(data_numeric, use = "pairwise.complete.obs")
+  
+  print("Análisis de Correlación:")
+  print(corr_matrix)
+} else {
+  print("No hay suficientes columnas numéricas con datos completos para calcular correlaciones.")
+}
+```
+
+#Regresiones Lineales Simples
+
+# Actividad_Industrial vs Inversion_Fija_Bruta
+```{r}
+modelo_Industrial <- lm(Actividad_Industrial ~ Inversion_Fija_Bruta, predvars = data)
+summary(modelo_Industrial) 
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+ggplot(data, aes(x = Inversion_Fija_Bruta, y = Actividad_Industrial)) +
+  geom_point(color = "blue") +
+  geom_smooth(method = "lm", se = TRUE, color = "darkgreen") +
+  labs(title = "Regresión Lineal: Actividad_Industrial vs Inversion_Fija_Bruta",
+       x = "Inversion_Fija_Bruta",
+       y = "Actividad_Industrial") +
+  theme(plot.title = element_text(hjust = 1))  
+```
+Analisis corto
+El coeficiente Estimate indica que el IGAE aumenta 0.57350 unidades, con un intercepto de 41.45037. Un aumento de una unidad en esta variable se traduce a un incremento de 1.188 unidades en el IGAE.
+
+# Confianza_Consumidor vs Confianza_Empresarial
+```{r}
+modelo_Consumidor <- lm(Confianza_Consumidor ~ Confianza_Empresarial, data = data)
+summary(modelo_Consumidor) 
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+ggplot(data, aes(x = Confianza_Empresarial, y = Confianza_Consumidor)) +
+  geom_point(color = "blue") +
+  geom_smooth(method = "lm", se = TRUE, color = "darkgreen") +
+  labs(title = "Regresión Lineal: Confianza_Consumidor vs Confianza_Empresarial",
+       x = "Confianza_Empresarial",
+       y = "Confianza_Consumidor") +
+  theme(plot.title = element_text(hjust = 1))  
+```
+Analisis corto
+El coeficiente Estimate indica que el IGAE aumenta 0.38923 unidades, con un intercepto de 19.93454. Un aumento de una unidad en esta variable se traduce a un incremento de 0.38923 unidades en el IGAE.
+# SP500 vs Dow_Jones
+```{r}
+modelo_SP500 <- lm(SP500 ~ Dow_Jones, data = data)
+summary(modelo_SP500) 
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+ggplot(data, aes(x = Dow_Jones, y = SP500)) +
+  geom_point(color = "blue") +
+  geom_smooth(method = "lm", se = TRUE, color = "darkgreen") +
+  labs(title = "Regresión Lineal: SP500 vs Dow_Jones",
+       x = "Dow_Jones",
+       y = "SP500") +
+  theme(plot.title = element_text(hjust = 1))  
+```
+Analisis corto
+El coeficiente Estimate indica que el IGAE aumenta 1.275e-01 unidades, con un intercepto de -1.479e+02. Un aumento de una unidad en esta variable se traduce a un incremento de 1.275e-01 unidades en el IGAE.
+# Empleo_EUA vs Produccion_Manufacturera_EUA
+```{r}
+modelo_EUA <- lm(Empleo_EUA ~ Produccion_Manufacturera_EUA, data = data)
+summary(modelo_EUA) 
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+ggplot(data, aes(x = Produccion_Manufacturera_EUA, y = Empleo_EUA)) +
+  geom_point(color = "blue") +
+  geom_smooth(method = "lm", se = TRUE, color = "darkgreen") +
+  labs(title = "Regresión Lineal: Empleo_EUA vs Produccion_Manufacturera_EUA",
+       x = "Produccion_Manufacturera_EUA",
+       y = "Empleo_EUA") +
+  theme(plot.title = element_text(hjust = 1))  
+```
+Analisis corto
+El coeficiente Estimate indica que el IGAE aumenta 743.54 unidades, con un intercepto de 63190.35. Un aumento de una unidad en esta variable se traduce a un incremento de 743.54 unidades en el IGAE.
+
+# Exportaciones_Totales vs Exportaciones_Petroleras
+```{r}
+modelo_Totales <- lm(Exportaciones_Totales ~ Exportaciones_Petroleras, data = data)
+summary(modelo_Totales) 
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+ggplot(data, aes(x = Exportaciones_Petroleras, y = Exportaciones_Totales)) +
+  geom_point(color = "blue") +
+  geom_smooth(method = "lm", se = TRUE, color = "darkgreen") +
+  labs(title = "Regresión Lineal: Exportaciones_Totales vs Exportaciones_Petroleras",
+       x = "Exportaciones_Petroleras",
+       y = "Exportaciones_Totales") +
+  theme(plot.title = element_text(hjust = 1))  
+```
+Analisis corto
+El coeficiente Estimate indica que el IGAE aumenta 5.804e+00 unidades, con un intercepto de 1.138e+04. Un aumento de una unidad en esta variable se traduce a un incremento de 5.804e+00 unidades en el IGAE.
+
+# IPC_BMV vs Cetes_28_Dias
+```{r}
+modelo_BMV <- lm(IPC_BMV ~ Cetes_28_Dias, data = data)
+summary(modelo_BMV) 
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+ggplot (data), aes(x = Cetes_28_Dias, y = IPC_BMV)) +
+  geom_point(color = "blue") +
+  geom_smooth(method = "lm", se = TRUE, color = "darkgreen") +
+  labs(title = "Regresión Lineal: IPC_BMV vs Cetes_28_Dias",
+       x = "Cetes_28_Dias",
+       y = "IPC_BMV") +
+  theme(plot.title = element_text(hjust = 1))  
+```
+Analisis corto
+El coeficiente Estimate indica que el IGAE disminuye -1.9576 unidades, con un intercepto de 86.1461. Una disminucion de una unidad en esta variable se traduce a un disminucion de -1.9576 unidades en el IGAE.
+
+# Análisis de Regresiones Lineales Múltiple
+
+VIF < 5 → No hay multicolinealidad grave.
+
+VIF entre 5 y 10 → Hay multicolinealidad moderada.
+
+VIF > 10 → Multicolinealidad severa.
+
+# Actividad_Industrial ~ Inversion_Fija_Bruta + Actividades_Terciarias
+```{r}
+modelo_Industrial <- lm(Actividad_Industrial ~ Inversion_Fija_Bruta + Actividades_Terciarias, data = data)
+summary(modelo_Industrial)
+```
+
+```{r}
+scatter3d(Actividad_Industrial ~ Inversion_Fija_Bruta + Actividades_Terciarias, data = inegi_ie, 
+          fit = "linear", residuals = TRUE, bg = "black", axis.scales = TRUE, 
+          grid = TRUE, ellipsoid = FALSE)
+```
+
+```{r}
+vif(modelo_Industrial)
+```
+Analisis corto
+El modelo explica aproximadamente el 89.55% de la variabilidad en la variable dependiente (Actividad Industrial), lo cual es un ajuste excelente. 
+El VIF está entre 5 y 10, lo que indica multicolinealidad moderada. Esto significa que existe cierta correlación entre las variables predictoras, lo que podría afectar la estabilidad de los coeficientes si el modelo se modifica.
+
+# Confianza_Consumidor ~ Confianza_Empresarial + Ingresos_Retail
+```{r}
+modelo_Consumidor <- lm(Confianza_Consumidor ~ Confianza_Empresarial + Ingresos_Retail, data = data)
+summary(modelo_Consumidor)
+```
+
+```{r}
+scatter3d(Confianza_Consumidor ~ Confianza_Empresarial + Ingresos_Retail, data = data, 
+          fit = "linear", residuals = TRUE, bg = "black", axis.scales = TRUE, 
+          grid = TRUE, ellipsoid = FALSE)
+```
+
+```{r}
+vif(modelo_Consumidor)
+```
+Analisis corto
+El modelo explica aproximadamente el 55.8% de la variabilidad de la variable dependiente (Confianza del Consumidor), lo cual es un ajuste razonable para fenómenos socioeconómicos, donde se espera que haya otros factores no incluidos que expliquen parte de la variación.
+Los valores VIF son prácticamente 1, lo que indica ausencia de multicolinealidad. Los predictores son independientes entre sí y no distorsionan la estimación de los coeficientes.
+
+# SP500 ~ Dow_Jones + Tasa_Fondeo_Gubernamental
+```{r}
+modelo_SP500 <- lm(SP500 ~ Dow_Jones + Tasa_Fondeo_Gubernamental, data = inegi_ie)
+summary(modelo_SP500)
+```
+
+```{r}
+scatter3d(SP500 ~ Dow_Jones + Tasa_Fondeo_Gubernamental, data = inegi_ie, 
+          fit = "linear", residuals = TRUE, bg = "black", axis.scales = TRUE, 
+          grid = TRUE, ellipsoid = FALSE)
+```
+
+```{r}
+vif(modelo_SP500)
+```
+Analisis corto
+El modelo explica el 98.58% de la variabilidad del SP500, lo cual es extremadamente alto y sugiere un ajuste excelente del modelo. Esto es coherente, dado que el Dow Jones y el SP500 están altamente correlacionados en la práctica.
+Ambos valores de VIF están muy cerca de 1, lo que indica ausencia total de multicolinealidad. No hay problemas de redundancia entre las variables independientes.
+
+# Empleo_EUA ~ Produccion_Manufacturera_EUA + Asegurados_IMSS 
+```{r}
+modelo_Empleo_EUA <- lm(Empleo_EUA ~ Produccion_Manufacturera_EUA + Asegurados_IMSS, data = data)
+summary(modelo_Empleo_EUA)
+```
+
+```{r}
+scatter3d(Empleo_EUA ~ Produccion_Manufacturera_EUA + Asegurados_IMSS, data = data, 
+          fit = "linear", residuals = TRUE, bg = "black", axis.scales = TRUE, 
+          grid = TRUE, ellipsoid = FALSE)
+```
+
+```{r}
+vif(modelo_Empleo_EUA)
+```
+Analisis corto
+Esto indica que el modelo explica aproximadamente el 89.5% de la variabilidad en Empleo_EUA, lo cual es un ajuste muy bueno.
+No hay evidencia de multicolinealidad grave. Ambos valores son bajos, por lo tanto, no hay problemas de multicolinealidad que afecten la estimación del modelo.
+
+# Exportaciones_Totales ~ Exportaciones_Petroleras + Reservas_Internacionales
+```{r}
+modelo_Exportaciones_Totales <- lm(Exportaciones_Totales ~ Exportaciones_Petroleras + Reservas_Internacionales, data = data)
+summary(modelo_Exportaciones_Totales)
+```
+
+```{r}
+scatter3d(Exportaciones_Totales ~ Exportaciones_Petroleras + Reservas_Internacionales, data = data, 
+          fit = "linear", residuals = TRUE, bg = "black", axis.scales = TRUE, 
+          grid = TRUE, ellipsoid = FALSE)
+```
+
+```{r}
+vif(modelo_Exportaciones_Totales)
+```
+Analisis corto
+El modelo explica el 92.58% de la variabilidad de las exportaciones totales, lo que representa un ajuste excelente.
+Ambos valores son muy bajos (< 5), por lo que no hay presencia de multicolinealidad significativa entre los predictores.
+
+# IPC_BMV ~ Cetes_28_Dias + TIIE
+```{r}
+modelo_BMV <- lm(IPC_BMV ~ Cetes_28_Dias + TIIE, data = data)
+summary(modelo_BMV)
+```
+
+```{r}
+scatter3d(IPC_BMV ~ Cetes_28_Dias + TIIE, data = data, 
+          fit = "linear", residuals = TRUE, bg = "black", axis.scales = TRUE, 
+          grid = TRUE, ellipsoid = FALSE)
+```
+
+```{r}
+vif(modelo_BMV)
+```
+Analisis corto
+El modelo explica el 42.08% de la variabilidad del IPC, lo cual es moderado, significativamente menor que en los modelos anteriores.
+VIF > 10 → Multicolinealidad severa. En este caso, ambos predictores tienen VIF extremadamente altos, lo que indica una altísima colinealidad entre las tasas Cetes_28_Dias y TIIE.
+Esto sugiere que ambas variables están fuertemente correlacionadas entre sí, y su inclusión conjunta en el modelo distorsiona la estimación de los coeficientes.
+
