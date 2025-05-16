@@ -1,5 +1,5 @@
 ---
-title: "Tarea"
+title: "Tarea1_Resuelta"
 author: "Pedro Gutiérrez"
 format: html
 editor: visual
